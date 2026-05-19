@@ -73,17 +73,21 @@ zoom_registration <- zoom_registration %>%
 These first two charts represent registration of in-person attendees over the registration period, highlighting dates of targeted marketing efforts (CIO Office Hour Announcements, Campus Newsletter Announcements, InsideUW Ads, etc…). The first chart represents our marketing efforts made through various campus newsletters, and the second represents all remaining efforts labeled descriptively. The goal in analyzing this data is to aid in strategically leveraging communication channels for the greatest outreach in future conference iterations. It might also be worthwhile to further analyze this data, isolating our communication channels' intended audiences registration dates to see if these channels coincide with their intended audiences registration dates for the conference.
 
 ```{r}
-#Data Prep
+# Initial Data Prep Chunk for registration data.
 
 # Format Date to specification
 ohrd_registration$Registration_Date <- as.Date(ohrd_registration$Registration_Date, format = "%Y-%m-%d")
 zoom_registration$Registration_Date <- as.Date(zoom_registration$Registration_Date, format = "%Y-%m-%d")
 
-# Create the counts
+# Create the counts for OHRD Registrations
 daily_reg_counts_ohrd <- ohrd_registration %>%
   group_by(Registration_Date) %>%
   count()
 
+# Create the counts for zoom registrations
+# Filter Out duplicates from OHRD.
+# There were maybe like 3 duplicates that I did not get to filter out because of inconsistent emails used.
+# Email is, unfortunately, the best key. Names are a bad key to use. Don't use names.
 daily_reg_counts_zoom <- zoom_registration %>%
   filter(Event_experience == "VIRTUAL") %>%
   filter(!Registrant_email %in% ohrd_registration$Email) %>%
@@ -91,19 +95,21 @@ daily_reg_counts_zoom <- zoom_registration %>%
   count() %>%
   na.omit()
 
-# Add col to identify virtual or hybrid
+# Add col to each dataset to identify virtual or hybrid
+# This will be important to distiguish hybrid from virtual registrations when merged.
 daily_reg_counts_ohrd$Experience <- 'HYBRID'
 daily_reg_counts_zoom$Experience <- 'VIRTUAL'
 
-# Join the two together
+# Join the two registration tables together
 daily_reg_counts <- rbind(daily_reg_counts_ohrd, daily_reg_counts_zoom)
 
 ```
 
 
 ```{r}
-# Chart punctuated by newsletter outreach effors
+# Section to create Chart punctuated by newsletter outreach efforts specifically
 
+# This will come from the Comms team.
 newsletter_labels <- c(
   "2025-04-16" = "TechNews",
   "2025-04-30" = "Working@UW",
@@ -120,16 +126,17 @@ newsletter_labels <- c(
 
 ggplot(daily_reg_counts, aes(x=Registration_Date, y=n, fill=Experience)) +
   geom_bar(stat = "identity", position = "stack") +
+  #this part is getting the list of all the dates and scaling that by that, but removing weekends
   scale_x_date(
     breaks = function(x) {
       weekday_dates <- seq(min(x), max(x), by = "1 day")
       weekday_dates[!weekdays(weekday_dates) %in% c("Saturday", "Sunday")]
     },
     labels = function(x) {
-      # Format all dates as "dd/mm"
+      # Format all dates over registration period as "dd/mm"
       formatted <- format(x, "%m/%d")
       
-      # Replace labels for the event dates
+      # Replace labels for the event dates with the newsletter outreach labels
       event_dates <- as.Date(names(newsletter_labels))
       match_idx <- match(x, event_dates)
       
@@ -137,6 +144,7 @@ ggplot(daily_reg_counts, aes(x=Registration_Date, y=n, fill=Experience)) +
       formatted
     }
   ) +
+  #using uw madison branding colors.
   scale_fill_manual(
     values = c(
       "VIRTUAL" = "#0479A8",
@@ -156,6 +164,7 @@ ggplot(daily_reg_counts, aes(x=Registration_Date, y=n, fill=Experience)) +
 
 ```{r}
 # Chart punctuated by all other outreach efforts
+# Everthing is the same here as above.
 
 emails_and_ads_labels <- c(
   "2025-04-15" = "Email listserv/CoP",
@@ -210,7 +219,7 @@ These next two charts represent demographic information about conference registr
 
 ```{r}
 
-# Data Prep
+# Data Prep for demographic content 
 
 # Create School/College/Division counts
 scd_counts_ohrd <- ohrd_registration %>%
@@ -226,6 +235,7 @@ scd_counts_zoom <- zoom_registration %>%
   na.omit()
 
 # Manual analysis of qualitative data entered manually that maps poorly...
+# Zoom division info was entered manually in a form by registrants (sometimes it was there, sometimes people skipped the question), so I did some mapping myself here. It's not perfect, but is better than nothing. it might be better to do this in a new excel file this time and use a read for this.
 
 scd_count_zoom_2 <- data.frame(
   Division = c(
@@ -285,7 +295,7 @@ combined_scd <- bind_rows(scd_counts_ohrd, scd_count_zoom_2) %>%
 
 ```{r}
 
-# Data Prep
+# Data Prep section for Title Demographics.
 
 #remove title numbering and parenthesis with regex
 ohrd_registration$clean_title <- ohrd_registration$Title %>%
@@ -293,7 +303,7 @@ ohrd_registration$clean_title <- ohrd_registration$Title %>%
   str_remove("\\s+[IVXLCDM]+$") %>%                 # Remove trailing Roman numerals
   str_trim()
 
-# Title formatting changes
+# Manual Title formatting changes, collapsing to consistent titles, removing incorrectly answered info
 ohrd_registration <- ohrd_registration %>%
   mutate(clean_title = ifelse(clean_title == "STARTING 12/1/13- CALL 515-8399 TO REACH ME", NA, clean_title)) %>%
   mutate(clean_title = ifelse(clean_title == "TECH INT ENG", "TECHNICAL INTEGRATION ENG", clean_title)) %>%
@@ -371,27 +381,29 @@ combined_title <- bind_rows(title_counts_ohrd, title_counts_zoom_2) %>%
 
 ```{r}
 
+#Lots of formatting stuff for this pie chart
 pie_scd <- combined_scd %>%
-  arrange(desc(count)) %>%
+  arrange(desc(count)) %>% #makes it go greatest to least
   mutate(
     Division_grouped = case_when(
       row_number() <= 10 ~ Division,  # keep top 10
       TRUE ~ "Other"
     ),
-  ) %>%
+  ) %>% #mutate collapses everything beyond top 10 to an other category
   group_by(Division_grouped) %>%
-  summarise(new_count = sum(count)) %>%
+  summarise(new_count = sum(count)) %>% #just joins all the 'other' items together
   mutate(percentage = new_count / sum(new_count)) %>%
   mutate(
     Division_grouped = paste0(
       "(", round(percentage * 100), "%", ") ", Division_grouped
     )
-  ) %>%
+  ) %>% #add percentage to the labels
   mutate(
     Division_grouped = fct_reorder(Division_grouped, new_count, .fun = sum, .desc = TRUE),
     Division_grouped = fct_relevel(Division_grouped, "(19%) Other", after = Inf)
   )
 
+#This creates different colors along a sort of color merge so that I could keep with branding
 my_palette_11 <- colorRampPalette(c("#9B0000", "#333333", "#0479A8", "#F7F7F7"))(11)
 
 ggplot(pie_scd, aes(x = "", y = new_count, fill = Division_grouped)) +
@@ -503,6 +515,8 @@ A key observation here is our top 5 represented titles at the conference. Althou
 #### Total attendee/registrant counts with comparison to previous year(s):
 
 ```{r}
+# Manually create table for the yearly attendee/registrant counts with comparison to previous year(s)
+
 data = matrix(c(9, 208, 217, 45, 230, 275, 36, 227, 263, NA, NA, 315, NA, NA, 286, 65, 396, 461, 74, 373, 447, 47, 486, 533, 48, 403, 451), ncol=9)
 
 rownames(data) <- c('Absent:', 'Attended:', 'Total:')
@@ -514,8 +528,9 @@ kable(as.data.frame(data))
 
 ```{r include = FALSE}
 
-# Data Prep for bar chart, and export of the new excel file.
+# Data Prep for bar chart, and export of the new excel file for use next year.
 
+# Finding committee members & presenters with 'in kind' as their payment method
 in_kind <- ohrd_registration %>%
   filter(Payment_Method == "In Kind")
 
