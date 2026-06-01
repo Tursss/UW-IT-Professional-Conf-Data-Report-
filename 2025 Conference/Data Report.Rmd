@@ -1,0 +1,767 @@
+---
+title: "2025 IT Prof Conf Data Report"
+author: "Spencer Bailey"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, fig.align = "center")
+```
+
+
+```{r, include = FALSE}
+# Library Loads...
+library(readxl)
+library(dplyr)
+library(ggplot2)
+library(stringr)
+library(tidyverse)
+library(grDevices)
+library(knitr)
+library(kableExtra)
+
+```
+
+___
+### [Conference Registration and Attendance Metrics]{.underline}
+
+
+```{r}
+
+# Data Load:
+
+# 1. Read Excel Data
+ohrd_registration <- read_excel(
+  "./Registrationsfor93246asof061025withAttendance.xlsx", 
+  .name_repair = function(col)
+    { 
+      gsub(" ", "_", col) 
+    }
+)
+
+zoom_registration <- read_excel(
+  "./Ticket_Registration & Attendance.xlsx", 
+  .name_repair = function(col)
+    { 
+      gsub(" ", "_", col) 
+    }
+)
+
+reg_2017_to_2024 <- read_excel(
+  "./all_registrants_2017-2024.xlsx"
+)
+
+session_summary <- read_excel(
+  "./SessionSummary.xlsx",
+  .name_repair = function(col)
+    { 
+      gsub(" ", "_", col) 
+    }
+) %>%
+  rename(Total_Attendees = `Total_Attendees_(including_views_during_the_conference)`)
+
+# Rename ugly col name
+zoom_registration <- zoom_registration %>% 
+  rename(Registration_Date = `Register_date_(UTC)`) %>%
+  rename(Division = `What_is_your_school,_college_or_division?_(do_not_abbreviate).__*_All_Virtual`) %>%
+  rename(Title = `Job_title_*_All_Virtual`)
+
+```
+
+#### Daily Registration Counts:
+
+These first two charts represent registration of in-person attendees over the registration period, highlighting dates of targeted marketing efforts (CIO Office Hour Announcements, Campus Newsletter Announcements, InsideUW Ads, etc…). The first chart represents our marketing efforts made through various campus newsletters, and the second represents all remaining efforts labeled descriptively. The goal in analyzing this data is to aid in strategically leveraging communication channels for the greatest outreach in future conference iterations. It might also be worthwhile to further analyze this data, isolating our communication channels' intended audiences registration dates to see if these channels coincide with their intended audiences registration dates for the conference.
+
+```{r}
+# Initial Data Prep Chunk for registration data.
+
+# Format Date to specification
+ohrd_registration$Registration_Date <- as.Date(ohrd_registration$Registration_Date, format = "%Y-%m-%d")
+zoom_registration$Registration_Date <- as.Date(zoom_registration$Registration_Date, format = "%Y-%m-%d")
+
+# Create the counts for OHRD Registrations
+daily_reg_counts_ohrd <- ohrd_registration %>%
+  group_by(Registration_Date) %>%
+  count()
+
+# Create the counts for zoom registrations
+# Filter Out duplicates from OHRD.
+# There were maybe like 3 duplicates that I did not get to filter out because of inconsistent emails used.
+# Email is, unfortunately, the best key. Names are a bad key to use. Don't use names.
+daily_reg_counts_zoom <- zoom_registration %>%
+  filter(Event_experience == "VIRTUAL") %>%
+  filter(!Registrant_email %in% ohrd_registration$Email) %>%
+  group_by(Registration_Date) %>%
+  count() %>%
+  na.omit()
+
+# Add col to each dataset to identify virtual or hybrid
+# This will be important to distiguish hybrid from virtual registrations when merged.
+daily_reg_counts_ohrd$Experience <- 'HYBRID'
+daily_reg_counts_zoom$Experience <- 'VIRTUAL'
+
+# Join the two registration tables together
+daily_reg_counts <- rbind(daily_reg_counts_ohrd, daily_reg_counts_zoom)
+
+```
+
+
+```{r}
+# Section to create Chart punctuated by newsletter outreach efforts specifically
+
+# This will come from the Comms team.
+newsletter_labels <- c(
+  "2025-04-16" = "TechNews",
+  "2025-04-30" = "Working@UW",
+  "2025-05-21" = "DoIT Connection",
+  "2025-05-07" = "SMPH 'In the Know'",
+  "2025-04-17" = "DoIT Connection",
+  "2025-04-24" = "DoIT Connection",
+  "2025-05-01" = "DoIT Connection",
+  "2025-05-08" = "DoIT Connection",
+  "2025-05-15" = "DoIT Connection",
+  "2025-05-22" = "DoIT Connection",
+  "2025-05-29" = "DoIT Connection"
+)
+
+ggplot(daily_reg_counts, aes(x=Registration_Date, y=n, fill=Experience)) +
+  geom_bar(stat = "identity", position = "stack") +
+  #this part is getting the list of all the dates and scaling that by that, but removing weekends
+  scale_x_date(
+    breaks = function(x) {
+      weekday_dates <- seq(min(x), max(x), by = "1 day")
+      weekday_dates[!weekdays(weekday_dates) %in% c("Saturday", "Sunday")]
+    },
+    labels = function(x) {
+      # Format all dates over registration period as "dd/mm"
+      formatted <- format(x, "%m/%d")
+      
+      # Replace labels for the event dates with the newsletter outreach labels
+      event_dates <- as.Date(names(newsletter_labels))
+      match_idx <- match(x, event_dates)
+      
+      formatted[!is.na(match_idx)] <- newsletter_labels[na.omit(match_idx)]
+      formatted
+    }
+  ) +
+  #using uw madison branding colors.
+  scale_fill_manual(
+    values = c(
+      "VIRTUAL" = "#0479A8",
+      "HYBRID" = "#9B0000"
+    )
+  ) +
+  theme(
+    axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5)  # Rotate labels
+  ) +
+  xlab("Full Registration Period") +
+  ylab("Daily Registration Tallys") +
+  ggtitle("Newsletter Outreach Marketing Efforts")
+
+```
+
+\
+
+```{r}
+# Chart punctuated by all other outreach efforts
+# Everthing is the same here as above.
+
+emails_and_ads_labels <- c(
+  "2025-04-15" = "Email listserv/CoP",
+  "2025-05-01" = "Email & InsideUW",
+  "2025-05-08" = "Email listserv/CoP",
+  "2025-05-13" = "Emaillistserv/CoP",
+  "2025-05-28" = "Email listserv/CoP",
+  "2025-05-23" = "OHRD Email",
+  "2025-04-24" = "InsideUW Ad",
+  "2025-04-08" = "InsideUW Ad",
+  "2025-04-25" = "CIO Office Hours"
+  
+)
+
+ggplot(daily_reg_counts, aes(x=Registration_Date, y=n, fill=Experience)) +
+  geom_bar(stat = "identity", position = "stack") +
+  scale_x_date(
+    breaks = function(x) {
+      weekday_dates <- seq(min(x), max(x), by = "1 day")
+      weekday_dates[!weekdays(weekday_dates) %in% c("Saturday", "Sunday")]
+    },
+    labels = function(x) {
+      # Format all dates as "dd/mm"
+      formatted <- format(x, "%m/%d")
+      
+      # Replace labels for the event dates
+      event_dates <- as.Date(names(emails_and_ads_labels))
+      match_idx <- match(x, event_dates)
+      
+      formatted[!is.na(match_idx)] <- emails_and_ads_labels[na.omit(match_idx)]
+      formatted
+    }
+  ) +
+  scale_fill_manual(
+    values = c(
+      "VIRTUAL" = "#0479A8",
+      "HYBRID" = "#9B0000"
+    )
+  ) +
+  theme(
+    axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5)  # Rotate labels
+  ) +
+  xlab("Full Registration Period") +
+  ylab("Daily Registration Tallys") +
+  ggtitle("Emails to listserv/CoPs, InsideUW Ads, CIO Office Hours")
+
+```
+
+#### Demographic counts for registrants:
+
+These next two charts represent demographic information about conference registrants. The first two charts break down registrants by their School/College/Division. The second two charts breaks registrants down by their position titles. The goal in analyzing demographic data in depth is to get a better sense of who our participants are, so that we might be able to, in future conference planning, identify what our participants might be interested in to drive up our engagement.
+
+```{r}
+
+# Data Prep for demographic content 
+
+# Create School/College/Division counts
+scd_counts_ohrd <- ohrd_registration %>%
+  group_by(Division) %>%
+  count() %>%
+  na.omit()
+
+scd_counts_zoom <- zoom_registration %>%
+  filter(Event_experience == "VIRTUAL") %>%
+  filter(!Registrant_email %in% ohrd_registration$Email) %>%
+  group_by(Division) %>%
+  count() %>%
+  na.omit()
+
+# Manual analysis of qualitative data entered manually that maps poorly...
+# Zoom division info was entered manually in a form by registrants (sometimes it was there, sometimes people skipped the question), so I did some mapping myself here. It's not perfect, but is better than nothing. it might be better to do this in a new excel file this time and use a read for this.
+
+scd_count_zoom_2 <- data.frame(
+  Division = c(
+    "Georgia Institute of Technology", 
+    "MOR Associates", 
+    "COLL OF AGRIC & LIFE SCIENCES", 
+    "COLLEGE OF ENGINEERING", 
+    "COLLEGE OF LETTERS AND SCIENCE", 
+    "Data Science Institute", 
+    "Data, Academic Planning & Institutional Research", 
+    "DIVISION OF CONTINUING STUDIES", 
+    "ENROLLMENT MANAGEMENT", 
+    "Division of Extension", 
+    "Division of Housing", 
+    "INFORMATION TECHNOLOGY",
+    "FACILITIES PLANNING AND MGMT",
+    "GENERAL SERVICES",
+    "La Follette School of Public Affairs",
+    "GENERAL LIBRARY",
+    "McBurney Disability Resource Center",
+    "Office of Admissions and Recruitment",
+    "Office of Human Resources",
+    "Office of Strategic Communication",
+    "Office of Strategic Consulting",
+    "VC FOR RESEARCH",
+    "Office of the Registrar",
+    "UW Police Department",
+    "WISCONSIN SCHOOL OF BUSINESS",
+    "School of Computer, Data & Information Sciences",
+    "SCHOOL OF EDUCATION",
+    "School of Human Ecology",
+    "School of Journalism and Mass Communication",
+    "SCH OF MEDICINE & PUBLIC HLTH",
+    "SCHOOL OF PHARMACY",
+    "SCHOOL OF VETERINARY MEDICINE",
+    "Social Science Computing Cooperative",
+    "ACAD & STU AFFAIRS-TOTAL",
+    "WI Public Media",
+    "WIS STATE LAB OF HYGIENE",
+    "Waisman Center",
+    "Wisconsin Institute for Discovery",
+    "Administrative Transformation Program",
+    "Office of Internal Audit",
+    "Universities of Wisconsin System Administration",
+    "Other Universities of Wisconsin",
+    "Wisconsin Child Welfare Professional Development System"
+  ),
+  
+  n = c(1, 1, 8, 5, 13, 1, 2, 5, 3, 3, 1, 89, 4, 1, 1, 7, 3, 1, 1, 1, 1, 12, 2, 1, 7, 4, 5, 2, 1, 52, 3, 2, 1, 1, 1, 2, 1, 1, 4, 1, 5, 7, 1)
+)
+
+combined_scd <- bind_rows(scd_counts_ohrd, scd_count_zoom_2) %>%
+  group_by(Division) %>%
+  summarise(count = sum(n), .groups = "drop")
+
+```
+
+```{r}
+
+# Data Prep section for Title Demographics.
+
+#remove title numbering and parenthesis with regex
+ohrd_registration$clean_title <- ohrd_registration$Title %>%
+  str_remove("\\s*(\\([^()]*\\)\\s*){1,2}$") %>%    # Remove up to two instances of trailing (...) content
+  str_remove("\\s+[IVXLCDM]+$") %>%                 # Remove trailing Roman numerals
+  str_trim()
+
+# Manual Title formatting changes, collapsing to consistent titles, removing incorrectly answered info
+ohrd_registration <- ohrd_registration %>%
+  mutate(clean_title = ifelse(clean_title == "STARTING 12/1/13- CALL 515-8399 TO REACH ME", NA, clean_title)) %>%
+  mutate(clean_title = ifelse(clean_title == "TECH INT ENG", "TECHNICAL INTEGRATION ENG", clean_title)) %>%
+  mutate(clean_title = ifelse(clean_title == "TEAM LEAD, IDENTITY AND ACCESS MANAGEMENT", "TEAM LEAD", clean_title)) %>%
+  mutate(clean_title = ifelse(clean_title == "SOFTWARE ENG/DEVELOPER", "SOFTWARE ENGINEER/DEVELOPER", clean_title)) %>%
+  mutate(clean_title = ifelse(clean_title == "IT PRO MGR", "IT MANAGER", clean_title)) %>%
+  mutate(clean_title = ifelse(clean_title == "DIRECTOR", "IT DIRECTOR", clean_title)) %>%
+  mutate(clean_title = ifelse(clean_title %in% c("BUSINESS ANALYSIS AND CHANGE MANAGEMENT ASSOCIATE DIRECTOR", "ASSOCIATE DIRECTOR, CAREER SERVICES", "ASSOCIATE DIRECTOR OF DESIGNLAB", "ASSISTANT DIRECTOR MERIT"), "ASSOCIATE DIRECTOR", clean_title))
+
+# Create Counts
+title_counts_ohrd <- ohrd_registration %>%
+  group_by(clean_title) %>%
+  count() %>%
+  na.omit()
+
+#remove title numbering and parenthesis with regex
+zoom_registration$clean_title <- zoom_registration$Title %>%
+  str_remove("\\s*(\\([^()]*\\)\\s*){1,2}$") %>%    # Remove up to two instances of trailing (...) content
+  str_remove("\\s+[IVXLCDM]+$") %>%                 # Remove trailing Roman numerals
+  str_trim()
+
+title_counts_zoom <- zoom_registration %>%
+  filter(Event_experience == "VIRTUAL") %>%
+  filter(!Registrant_email %in% ohrd_registration$Email) %>%
+  group_by(clean_title) %>%
+  count() %>%
+  na.omit()
+
+# Manual analysis of qualitative data entered manually that maps poorly...
+title_counts_zoom_2 <- data.frame(
+  clean_title = c(
+    "CYBERSECURITY ENGINEER",
+    "WEB OPERATIONS MANAGER",
+    "WEB DEVELOPER",
+    "WEB DESIGNER",
+    "IT DIRECTOR",
+    "USER SUPPORT SPECIALIST",
+    "USER EXPERIENCE ARCHITECT",
+    "IT MANAGER",
+    "TECHNICAL INTEGRATION ENG",
+    "TEAM LEAD",
+    "TEACHING & LEARNING SPEC",
+    "SYSTEM ENGINEER",
+    "TEST COORDINATOR",
+    "SYSTEM ADMINISTRATOR",
+    "SOFTWARE ENGINEER/DEVELOPER",
+    "SERVICE COORDINATOR",
+    "CYBERDEFENSE ANALYST",
+    "COMPLIANCE ADMIN",
+    "RESEARCH CI SPEC",
+    "RESEARCH CI MANAGER",
+    "NETWORK PROFESSIONAL",
+    "IT PROFESSIONAL",
+    "IT DIRECTOR",
+    "IT ANALYST",
+    "DEVOPS ENGINEER",
+    "DATA ENGINEER",
+    "COMMUNICATIONS SPECIALIST",
+    "COMMUNICATIONS MANAGER",
+    "CIO",
+    "BUSINESS SYSTEMS ANALYST",
+    "BI DEVELOPER"
+  ),
+  n = c(
+    1, 3, 4, 2, 1, 11, 2, 5, 3, 2, 2, 6, 1, 2, 9, 3, 5, 3, 2, 2, 3, 9, 16, 3, 5, 3, 2, 1, 3, 11, 3
+  )
+)
+
+combined_title <- bind_rows(title_counts_ohrd, title_counts_zoom_2) %>%
+  group_by(clean_title) %>%
+  summarise(count = sum(n))
+
+
+```
+
+```{r}
+
+#Lots of formatting stuff for this pie chart
+pie_scd <- combined_scd %>%
+  arrange(desc(count)) %>% #makes it go greatest to least
+  mutate(
+    Division_grouped = case_when(
+      row_number() <= 10 ~ Division,  # keep top 10
+      TRUE ~ "Other"
+    ),
+  ) %>% #mutate collapses everything beyond top 10 to an other category
+  group_by(Division_grouped) %>%
+  summarise(new_count = sum(count)) %>% #just joins all the 'other' items together
+  mutate(percentage = new_count / sum(new_count)) %>%
+  mutate(
+    Division_grouped = paste0(
+      "(", round(percentage * 100), "%", ") ", Division_grouped
+    )
+  ) %>% #add percentage to the labels
+  mutate(
+    Division_grouped = fct_reorder(Division_grouped, new_count, .fun = sum, .desc = TRUE),
+    Division_grouped = fct_relevel(Division_grouped, "(19%) Other", after = Inf)
+  )
+
+#This creates different colors along a sort of color merge so that I could keep with branding
+my_palette_11 <- colorRampPalette(c("#9B0000", "#333333", "#0479A8", "#F7F7F7"))(11)
+
+ggplot(pie_scd, aes(x = "", y = new_count, fill = Division_grouped)) +
+  geom_bar(stat = "identity", width = 1) +
+  coord_polar(theta = "y") +
+  theme_void() +  # removes axes and background
+  labs(fill = "Division") +
+  scale_fill_manual(values = my_palette_11)
+
+```
+
+```{r fig.height = 10, fig.width = 7.5}
+# School/College/Division representation:
+
+combined_scd$Division <- factor(combined_scd$Division, levels = combined_scd$Division[order(combined_scd$count)])
+
+ggplot(combined_scd, aes(x = Division, y = count)) +
+  geom_bar(stat = "identity", fill="#9B0000") +
+  geom_text(
+    data = combined_scd[combined_scd$count > 15, ],  # Only label bars exceeding the limit
+    aes(label = count, y = 4),  # Pin label at top of visible area
+    vjust = 0.4,
+    angle = 0,         # Rotate text 90 degrees
+    color = "#F7F7F7"
+  ) +
+  theme(
+    # Rotate labels
+    axis.text.y = element_text(angle = 0, hjust = 1, vjust = 0.5,)
+  ) +
+  xlab("Participant Work Organizations") +
+  ylab("Registration Tallys") +
+  ggtitle("Registration Tallys from Various Work Groups") +
+  coord_flip(ylim = c(0, 80))
+  
+
+```
+
+
+A key observation here is our top 5 represented divisions. DoIT, SMPH, L&S, VCFR and CALS comprised the greatest populations that registered for the conference this year. The top 3 track with our findings during the 2024 IT Professionals Conference as well. Another interesting note is slots 4 & 5 did change from last year. The \#4 slot last year was Engineering, and the \#5 slot was Research, this year being overtaken by VCFR at \#4 and CALS at \#5.
+
+```{r}
+
+pie_title <- combined_title %>%
+  arrange(desc(count)) %>%
+  mutate(
+    Title_grouped = case_when(
+      row_number() <= 10 ~ clean_title,  # keep top 10
+      TRUE ~ "Other"
+    ),
+  ) %>%
+  group_by(Title_grouped) %>%
+  summarise(new_count = sum(count)) %>%
+  mutate(percentage = new_count / sum(new_count)) %>%
+  mutate(
+    Title_grouped = paste0(
+      "(", round(percentage * 100), "%", ") ", Title_grouped
+    )
+  ) %>%
+  mutate(
+    Title_grouped = fct_reorder(Title_grouped, new_count, .fun = sum, .desc = TRUE),
+    Title_grouped = fct_relevel(Title_grouped, "(41%) Other", after = Inf)
+  )
+
+my_palette_11 <- colorRampPalette(c("#9B0000", "#333333", "#0479A8", "#F7F7F7"))(11)
+
+ggplot(pie_title, aes(x = "", y = new_count, fill = Title_grouped)) +
+  geom_bar(stat = "identity", width = 1) +
+  coord_polar(theta = "y") +
+  theme_void() +  # removes axes and background
+  labs(fill = "Title") +
+  scale_fill_manual(values = my_palette_11)
+
+
+```
+
+
+```{r fig.height = 10, fig.width = 7.5}
+
+combined_title$clean_title <- factor(combined_title$clean_title, levels = combined_title$clean_title[order(combined_title$count)])
+
+# Position Title representation:
+ggplot(combined_title, aes(x = clean_title, y = count)) +
+  geom_bar(stat = "identity", fill="#9B0000") +
+  geom_text(
+    data = combined_title[combined_title$count > 18, ],  # Only label bars exceeding the limit
+    aes(label = count, y = 1),
+    vjust = 0.4,
+    angle = 0,       # Rotate text 90 degrees
+    color = "#F7F7F7",
+    size = 3
+  ) +
+  theme(
+    # Rotate labels
+    axis.text.y = element_text(angle = 0, hjust = 1, vjust = 0.5,)
+  ) +
+  xlab("Participant Work Organizations") +
+  ylab("Registration Tallys") +
+  ggtitle("Registration Tallys from Various Position Titles") +
+  theme(
+    plot.title = element_text(hjust = 0)
+  ) +
+  coord_flip(ylim = c(0, 30))
+  
+
+```
+
+A key observation here is our top 5 represented titles at the conference. Although directors make up a much smaller population of campus employees, they represent the greatest proportion of conference attendees. Software Developers make up another large proportion of conference attendees, as do Support Specialists. Increasing our breadth of content may be able to bring numbers up for smaller represented title groups.
+
+#### Total attendee/registrant counts with comparison to previous year(s):
+
+```{r}
+# Manually create table for the yearly attendee/registrant counts with comparison to previous year(s)
+
+data = matrix(c(9, 208, 217, 45, 230, 275, 36, 227, 263, NA, NA, 315, NA, NA, 286, 65, 396, 461, 74, 373, 447, 47, 486, 533, 48, 403, 451), ncol=9)
+
+rownames(data) <- c('Absent:', 'Attended:', 'Total:')
+colnames(data) <- c('2017', '2018', '2019', '2020', '2021', '2022', '2023', '2024', '2025')
+
+kable(as.data.frame(data))
+
+```
+
+```{r include = FALSE}
+
+# Data Prep for bar chart, and export of the new excel file for use next year.
+
+# Finding committee members & presenters with 'in kind' as their payment method
+in_kind <- ohrd_registration %>%
+  filter(Payment_Method == "In Kind")
+
+all_reg_prep_zoom <- zoom_registration %>%
+  mutate(
+    COURSE_NAME = "IT Professionals Conference 2025",
+    Attended = if_else(Event_attendance == "Absent", 0, 1),
+    NETID = sub("@.*", "", Registrant_email),
+    PVI = NA,
+    YEAR = "2025",
+    `Dupplicate?` = 'No',
+    `Ticket Type` = if_else(Registrant_email %in% in_kind$Email, "Special", "General")
+  ) %>%
+  select(COURSE_NAME, Attended, NETID, PVI, YEAR, `Dupplicate?`, `Ticket Type`)
+
+reg_2017_to_2025 <- bind_rows(reg_2017_to_2024, all_reg_prep_zoom)
+
+reg_2017_to_2025 <- reg_2017_to_2025 %>%
+  mutate(YEAR = gsub("\\.0$", "", as.character(YEAR)))
+
+```
+
+
+```{r fig.height = 6, include = FALSE}
+
+yearly_turnout <- reg_2017_to_2025 %>%
+  group_by(YEAR, Attended) %>%
+  summarise(count = n()) %>%
+  group_by(YEAR) %>%
+  summarise(
+    total = sum(count),
+    attended = sum(count[Attended == 1]),
+    turnout_rate = paste0(round(100 * attended / total, 1), "%")
+  ) %>%
+  mutate(YEAR = factor(YEAR, levels = sort(unique(reg_2017_to_2025$YEAR)))) %>%
+  mutate(
+    turnout_rate = if_else(turnout_rate == "100%", NA_character_, turnout_rate)
+  )
+
+```
+
+```{r}
+
+suppressWarnings(
+  print(
+
+reg_2017_to_2025 %>%
+  group_by(YEAR, Attended) %>%
+  summarise(.groups = "drop",  # drop the grouping to suppress the message
+            count = n()) %>%
+
+ggplot(aes(x=YEAR, y=count, fill=factor(Attended))) +
+  geom_bar(stat="identity", position = "stack") + 
+  scale_fill_manual(
+    values = c(
+      "0" = "#0479A8",
+      "1" = "#9B0000"
+    ),
+    labels = c(
+      "0" = "Absent", "1" = "Attended"
+    )
+  ) +
+  geom_text(
+    data = yearly_turnout,
+    aes(x = factor(YEAR), y = total, label = turnout_rate),
+    vjust = -0.5,
+    inherit.aes = FALSE
+  ) +
+  labs(fill = "Attendance Status") +
+  xlab("Conference Year") +
+  ylab("Registration Tallys") +
+  ggtitle("Annual Registration Trend")
+
+))
+  
+
+```
+
+___
+
+### [Session Attendance Metrics]{.underline}
+
+#### Total Attendance Recorded Throughout the Day:
+
+The two following graphs here will portray attendance throughout the day of each conference day, to determine how strongly our attendance counts hold from earlier sessions to later sessions. This insight is valuable as it reveals when peak attendance times are during our conference days.
+
+```{r}
+
+legend_df <- data.frame(
+  x = as_datetime("2025-05-29 9:05:00"),
+  y = c(299, 178, 109),
+  type = c("Total", "Virtual", "Hybrid")
+)
+
+legend_df$type <- factor(legend_df$type, levels = c("Total", "Virtual", "Hybrid"))
+
+suppressWarnings(
+  
+day_one_attendance <- session_summary %>%
+  mutate(
+    Virtual_Attendees = as.numeric(Virtual_Attendees), 
+    In_person_Attendees = as.numeric(In_person_Attendees)
+  ) %>%
+  mutate (
+    Virtual_Attendees = replace_na(Virtual_Attendees, 0),
+    In_person_Attendees = replace_na(In_person_Attendees, 0),
+    Start_time = as_datetime(Start_time)
+  ) %>%
+  group_by(Start_time) %>%
+  summarise(
+    Total_Attendees = sum(Total_Attendees), 
+    Virtual_Attendees = sum(Virtual_Attendees),
+    In_person_Attendees = sum(In_person_Attendees)
+  ) %>%
+  filter(as.Date(Start_time) == as.Date("2025-05-29"))
+
+)
+  
+  ggplot(day_one_attendance, aes(x = Start_time)) +
+  geom_point(aes(y=Total_Attendees), color = "#333333") +
+  geom_point(aes(y=Virtual_Attendees), color = "#0479A8") +
+  geom_point(aes(y=In_person_Attendees), color = "#9B0000") +
+  geom_line(aes(y=Total_Attendees), color = "#333333", linewidth = 1) +
+  geom_line(aes(y=Virtual_Attendees), color = "#0479A8", linewidth = 1) +
+  geom_line(aes(y=In_person_Attendees), color = "#9B0000", linewidth = 1) +
+  ylim(0, 310) +
+  scale_x_datetime(breaks = unique(day_one_attendance$Start_time), date_labels = "%H:%M") +
+  geom_point(
+    data = legend_df,
+    aes(x = x, y = y, color = type),
+    size = 0, show.legend = TRUE
+  ) +
+  scale_color_manual(
+    name = "Attendance Type",
+    values = c("Total" = "#333333", "Virtual" = "#0479A8", "Hybrid" = "#9B0000")
+  ) +
+  guides(color = guide_legend(override.aes = list(size = 3))) +
+  xlab("Session Times") +
+  ylab("Attendance") +
+  ggtitle("Conference Attendance: Day One")
+
+
+```
+
+```{r}
+suppressWarnings(
+  
+day_two_attendance <- session_summary %>%
+  mutate(
+    Start_time = as_datetime(Start_time)
+  ) %>%
+  group_by(Start_time) %>%
+  summarise(
+    Total_Attendees = sum(Total_Attendees)
+  ) %>%
+  filter(as.Date(Start_time) == as.Date("2025-05-30"))
+
+)
+
+ggplot(day_two_attendance, aes(x=Start_time)) +
+  geom_point(aes(y=Total_Attendees), color = "#333333") +
+  geom_line(aes(y=Total_Attendees), linewidth = 1) +
+  ylim(0, 150) +
+  scale_x_datetime(breaks = unique(day_two_attendance$Start_time), date_labels = "%H:%M") +
+  xlab("Session Times") +
+  ylab("Attendance") +
+  ggtitle("Conference Attendance: Day Two")
+  
+  
+
+
+```
+
+
+#### Breakdown of Total Attendance Throughout the Day by Session:
+
+```{r}
+suppressWarnings(
+
+session_summary %>%
+  mutate(Virtual_Attendees = as.numeric(Virtual_Attendees), In_person_Attendees = as.numeric(In_person_Attendees))%>%
+  mutate(Virtual_Attendees = replace_na(Virtual_Attendees, 0),
+    In_person_Attendees = replace_na(In_person_Attendees, 0),) %>%
+  arrange(Start_time, Total_Attendees) %>%
+  select(Name, Total_Attendees, Virtual_Attendees, In_person_Attendees) %>%
+  rename(`Session Title` = Name, `Total Attended` = Total_Attendees, `Attended Virtual` = Virtual_Attendees, `Attended In-Person` = In_person_Attendees) %>%
+  kable()
+
+)
+
+```
+
+#### Observations:
+
+The first key observation in the session attendance are our top 5 attended sessions. They keynote had the highest turnout, as it is likely that many were interested in hearing what Lois Brooks had to share with the campus community prior to her retirement. The IT Recognition Awards was the second most attended session, and these follow with what we saw last year with keynote and awards being the top two. Our third place goes to "AI in Action", fourth to "Collaborating and planning for AI across the Universities of Wisconsin", and fifth to "Countdown to Workday."
+
+Another observation made in this data is the decline of participation as the conference carries through the day. It is likely that some people attend only to see our keynote presentations, it is likely that work emergencies or situations take people away from the conference as the day goes on.
+
+A final observation here with the session attendance data is that networking, just as we saw last year, has the lowest turnout for session attendance.
+
+___
+
+### [Financial Reporting]{.underline}
+
+This section will share out the information available in our 2025 Budgeting Sheet.
+
+#### Funds Available for the 2025 IT Professionals Conference:
+
+```{r}
+financials <- data.frame(
+  `Budget_Allocation` = "$12,000", 
+  `Registration_Revenue` = "$4,600", 
+  `Total_Budget` = "$16,600"
+)
+
+kable(as.data.frame(financials))
+```
+
+#### Funds Used for the 2025 IT Professionals Conference:
+
+```{r}
+obligations <- data.frame(
+  Facility_Cost = "$3,520.00",
+  Catering_Cost = "$6,030.00",
+  Keynote_Speaker_Fee = "$0.00",
+  MISC_Expenses = "$342.20",
+  Captioning = "$0.00",
+  Advertising = "$600.00",
+  Total = "$10,492"
+)
+
+kable(obligations)
+
+```
