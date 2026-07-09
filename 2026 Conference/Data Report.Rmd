@@ -365,23 +365,28 @@ ggplot(pie_scd, aes(x = "", y = new_count, fill = Division_grouped)) +
 
 combined_scd$Division <- factor(combined_scd$Division, levels = combined_scd$Division[order(combined_scd$count)])
 
-ggplot(combined_scd, aes(x = Division, y = count)) +
-  geom_bar(stat = "identity", fill="#9B0000") +
+
+ggplot(combined_scd, aes(x = Division, y = count)) + 
+  geom_bar(stat = "identity", fill="#9B0000") + 
   geom_text(
-    data = combined_scd[combined_scd$count > 15, ],  # Only label bars exceeding the limit
-    aes(label = count, y = 4),  # Pin label at top of visible area
-    vjust = 0.4,
-    angle = 0,         # Rotate text 90 degrees
+    data = combined_scd[combined_scd$count > 15, ], 
+    aes(label = count, y = 1),
+    hjust = 0,
+    vjust = 0.4, 
+    angle = 0, 
     color = "#F7F7F7"
-  ) +
+  ) + 
+  # Fixed trailing comma and combined your themes cleanly
   theme(
-    # Rotate labels
-    axis.text.y = element_text(angle = 0, hjust = 1, vjust = 0.5,)
-  ) +
-  xlab("Participant Work Organizations") +
-  ylab("Registration Tallys") +
-  ggtitle("Registration Tallys from Various Work Groups") +
-  coord_flip(ylim = c(0, 80))
+    axis.text.y = element_text(angle = 0, hjust = 1, vjust = 0.5),
+    plot.title = element_text(lineheight = 1.2) # Adds nice vertical spacing between title lines
+  ) + 
+  xlab("Participant Work Organizations") + 
+  ylab("Registration Tallys") + 
+  # FIX: Wraps the title text automatically at 40 characters
+  ggtitle(str_wrap("Registration Tallys from Various Work Groups", width = 24)) + 
+  coord_flip(ylim = c(0, 165))
+
   
 
 ```
@@ -417,7 +422,7 @@ ggplot(pie_title, aes(x = "", y = new_count, fill = Title_grouped)) +
   geom_bar(stat = "identity", width = 1) +
   coord_polar(theta = "y") +
   theme_void() +  # removes axes and background
-  labs(fill = "Title") +
+  labs(fill = "Position Title") +
   scale_fill_manual(values = my_palette_11)
 
 
@@ -434,6 +439,7 @@ ggplot(combined_title, aes(x = clean_title, y = n)) +
   geom_text(
     data = combined_title[combined_title$n > 18, ],  # Only label bars exceeding the limit
     aes(label = n, y = 1),
+    hjust = 0,
     vjust = 0.4,
     angle = 0,       # Rotate text 90 degrees
     color = "#F7F7F7",
@@ -441,11 +447,14 @@ ggplot(combined_title, aes(x = clean_title, y = n)) +
   ) +
   theme(
     # Rotate labels
-    axis.text.y = element_text(angle = 0, hjust = 1, vjust = 0.5,)
+    axis.text.y = element_text(angle = 0, hjust = 1, vjust = 0.5,),
+    # Fix Title
+    plot.title = element_text(lineheight = 1.2) # Adds nice vertical spacing between title lines
+
   ) +
   xlab("Participant Work Organizations") +
   ylab("Registration Tallys") +
-  ggtitle("Registration Tallys from Various Position Titles") +
+  ggtitle(str_wrap("Registration Tallys from Various Position Titles", width = 20)) +
   theme(
     plot.title = element_text(hjust = 0)
   ) +
